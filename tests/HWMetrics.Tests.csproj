@@ -20,6 +20,11 @@
 
   <ItemGroup>
     <Compile Include="LocalizerTests.cs" />
+    <Compile Include="DashboardMetricsControlTests.cs" />
+    <Compile Include="FrequencyHistoryChartTests.cs" />
+    <Compile Include="FrequencyPanelControlTests.cs" />
+    <Compile Include="TemperatureHistoryChartTests.cs" />
+    <Compile Include="UtilizationHistoryChartTests.cs" />
     <ProjectReference Include="..\HWMetrics.csproj" />
   </ItemGroup>
 </Project>

@@ -546,14 +546,14 @@ public partial class MainWindow : Window
     {
         _selectedStorageDriveName = volume.Name;
         // ProductModel identifies the physical disk, not the filesystem volume label.
-        StorageModelText.Text = string.IsNullOrWhiteSpace(volume.ProductModel)
+        DashboardMetrics.StorageModelText.Text = string.IsNullOrWhiteSpace(volume.ProductModel)
             ? T("Drive model unavailable")
             : volume.ProductModel;
-        StorageUsedPercentText.Text = $"{volume.UsedPercent:0}%";
-        StorageCapacityText.Text =
+        DashboardMetrics.StorageUsedPercentText.Text = $"{volume.UsedPercent:0}%";
+        DashboardMetrics.StorageCapacityText.Text =
             $"{FormatCapacity(volume.UsedGiB)} / {FormatCapacity(volume.TotalGiB)} {T("total")} - " +
             $"{FormatCapacity(volume.FreeGiB)} {T("free")}";
-        AnimateProgress(StorageUsageBar, volume.UsedPercent);
+        AnimateProgress(DashboardMetrics.StorageUsageBar, volume.UsedPercent);
     }
 
     private static string FormatFrequency(double? frequencyMHz) =>
@@ -561,102 +561,21 @@ public partial class MainWindow : Window
             ? $"{value / 1000d:0.00} GHz"
             : "-- GHz";
 
-    private void FrequencyChartCanvas_SizeChanged(object sender, SizeChangedEventArgs e) => DrawFrequencyHistory();
-
-    private void DrawFrequencyHistory()
-    {
-        if (FrequencyChartCanvas is null) return;
-        var width = FrequencyChartCanvas.ActualWidth;
-        var height = FrequencyChartCanvas.ActualHeight;
-        if (width <= 1 || height <= 1) return;
-
-        var samples = _frequencyHistory.ToArray();
-        var validValues = samples.SelectMany(sample => new[] { sample.CpuFrequencyMHz, sample.GpuFrequencyMHz })
-            .Where(value => value.HasValue && double.IsFinite(value.Value) && value.Value >= 100)
-            .Select(value => value!.Value).ToArray();
-        if (validValues.Length == 0)
-        {
-            CpuFrequencyLine.Data = Geometry.Empty;
-            GpuFrequencyLine.Data = Geometry.Empty;
-            return;
-        }
-
-        var min = Math.Max(0, Math.Floor(validValues.Min() / 500d) * 500d);
-        var max = Math.Ceiling(validValues.Max() / 500d) * 500d;
-        if (max - min < 500) max = min + 500;
-
-        var cpuGeometry = new PathGeometry();
-        var gpuGeometry = new PathGeometry();
-        PathFigure? cpuFigure = null;
-        PathFigure? gpuFigure = null;
-        var newest = samples.Length > 0 ? samples[^1].UpdatedAt : DateTime.MinValue;
-        DateTime? previousSampleAt = null;
-
-        foreach (var sample in samples)
-        {
-            // Break the line when the polling interval was missed; don't imply continuous telemetry.
-            if (previousSampleAt is DateTime previous && (sample.UpdatedAt - previous).TotalSeconds > 2.5)
-            {
-                cpuFigure = null;
-                gpuFigure = null;
-            }
-
-            // Use a fixed 60-second window so the graph's horizontal scale is stable.
-            var ageSeconds = Math.Clamp((newest - sample.UpdatedAt).TotalSeconds, 0, 60);
-            var x = width * (1 - ageSeconds / 60d);
-            AddFrequencyPoint(cpuGeometry, ref cpuFigure, sample.CpuFrequencyMHz, x, height, min, max);
-            AddFrequencyPoint(gpuGeometry, ref gpuFigure, sample.GpuFrequencyMHz, x, height, min, max);
-            previousSampleAt = sample.UpdatedAt;
-        }
-
-        CpuFrequencyLine.Data = cpuGeometry;
-        GpuFrequencyLine.Data = gpuGeometry;
-    }
-
-    private static void AddFrequencyPoint(
-        PathGeometry geometry,
-        ref PathFigure? currentFigure,
-        double? value,
-        double x,
-        double height,
-        double min,
-        double max)
-    {
-        if (value is not double frequency || !double.IsFinite(frequency) || frequency < 100)
-        {
-            // Start a new path after a missing sample; never draw a false bridge across telemetry gaps.
-            currentFigure = null;
-            return;
-        }
-
-        var y = height - 4 - ((frequency - min) / (max - min)) * (height - 8);
-        var point = new Point(x, Math.Clamp(y, 2, height - 2));
-        if (currentFigure is null)
-        {
-            currentFigure = new PathFigure { StartPoint = point, IsFilled = false, IsClosed = false };
-            geometry.Figures.Add(currentFigure);
-        }
-        else
-        {
-            currentFigure.Segments.Add(new LineSegment(point, isStroked: true));
-        }
-    }
-
     private void Render(SensorSnapshot s)
     {
         _lastSnapshot = s;
         _frequencyHistory.Enqueue(s);
         while (_frequencyHistory.Count > 0 && s.UpdatedAt - _frequencyHistory.Peek().UpdatedAt > TimeSpan.FromSeconds(60))
             _frequencyHistory.Dequeue();
-        CpuFrequencyText.Text = FormatFrequency(s.CpuFrequencyMHz);
-        GpuFrequencyText.Text = FormatFrequency(s.GpuFrequencyMHz);
-        DrawFrequencyHistory();
-        CpuModelText.Text = string.IsNullOrWhiteSpace(s.CpuModel) ? T("Processor model unavailable") : s.CpuModel;
-        GpuModelText.Text = string.IsNullOrWhiteSpace(s.GpuModel) ? T("Graphics model unavailable") : s.GpuModel;
-        StorageModelText.Text = string.IsNullOrWhiteSpace(s.StorageModel) ? T("Drive model unavailable") : s.StorageModel;
-        CpuTempText.Text = ShortTemp(s.CpuTemperatureC);
+        FrequencyPanel.CpuFrequencyText.Text = FormatFrequency(s.CpuFrequencyMHz);
+        FrequencyPanel.GpuFrequencyText.Text = FormatFrequency(s.GpuFrequencyMHz);
+        FrequencyPanel.FrequencyHistoryChart.Samples = _frequencyHistory.ToArray();
+        DashboardMetrics.CpuModelText.Text = string.IsNullOrWhiteSpace(s.CpuModel) ? T("Processor model unavailable") : s.CpuModel;
+        DashboardMetrics.GpuModelText.Text = string.IsNullOrWhiteSpace(s.GpuModel) ? T("Graphics model unavailable") : s.GpuModel;
+        DashboardMetrics.StorageModelText.Text = string.IsNullOrWhiteSpace(s.StorageModel) ? T("Drive model unavailable") : s.StorageModel;
+        DashboardMetrics.CpuTempText.Text = ShortTemp(s.CpuTemperatureC);
         CoolerPreview.SetTemperature(s.CpuTemperatureC.HasValue ? $"{s.CpuTemperatureC.Value:0}" : "--");
-        GpuTempText.Text = ShortTemp(s.GpuTemperatureC);
+        DashboardMetrics.GpuTempText.Text = ShortTemp(s.GpuTemperatureC);
         if (s.StorageVolumes.Count > 0)
         {
             // Select the Windows system volume on first render; subsequent reads keep the
@@ -694,27 +613,27 @@ public partial class MainWindow : Window
                 _storageDriveIndex = systemIndex >= 0 ? systemIndex : 0;
             }
             RenderStorageVolume(s.StorageVolumes[_storageDriveIndex]);
-            StorageVolumesText.Text = Localizer.Get(s.StorageVolumesSummary);
+            DashboardMetrics.StorageVolumesText.Text = Localizer.Get(s.StorageVolumesSummary);
         }
         else if (s.StorageUsedPercent.HasValue && s.StorageUsedGiB.HasValue && s.StorageTotalGiB.HasValue)
         {
             // Keep a safe fallback for snapshots with legacy aggregate storage data.
-            StorageUsedPercentText.Text = $"{s.StorageUsedPercent.Value:0}%";
-            StorageCapacityText.Text = $"{FormatCapacity(s.StorageUsedGiB.Value)} / {FormatCapacity(s.StorageTotalGiB.Value)} {T("total")}" +
+            DashboardMetrics.StorageUsedPercentText.Text = $"{s.StorageUsedPercent.Value:0}%";
+            DashboardMetrics.StorageCapacityText.Text = $"{FormatCapacity(s.StorageUsedGiB.Value)} / {FormatCapacity(s.StorageTotalGiB.Value)} {T("total")}" +
                 (s.StorageFreeGiB.HasValue ? $" - {FormatCapacity(s.StorageFreeGiB.Value)} {T("free")}" : string.Empty);
-            AnimateProgress(StorageUsageBar, s.StorageUsedPercent.Value);
-            StorageVolumesText.Text = Localizer.Get(s.StorageVolumesSummary);
+            AnimateProgress(DashboardMetrics.StorageUsageBar, s.StorageUsedPercent.Value);
+            DashboardMetrics.StorageVolumesText.Text = Localizer.Get(s.StorageVolumesSummary);
         }
         else
         {
-            StorageUsedPercentText.Text = "N/D";
-            StorageCapacityText.Text = T("Storage capacity unavailable");
-            StorageUsageBar.Value = 0;
-            StorageVolumesText.Text = T("No local volumes detected");
+            DashboardMetrics.StorageUsedPercentText.Text = "N/D";
+            DashboardMetrics.StorageCapacityText.Text = T("Storage capacity unavailable");
+            DashboardMetrics.StorageUsageBar.Value = 0;
+            DashboardMetrics.StorageVolumesText.Text = T("No local volumes detected");
         }
 
-        CpuLoadText.Text = T("Utilization ") + Percent(s.CpuLoadPercent);
-        GpuLoadText.Text = T("Utilization ") + Percent(s.GpuLoadPercent);
+        DashboardMetrics.CpuLoadText.Text = T("Utilization ") + Percent(s.CpuLoadPercent);
+        DashboardMetrics.GpuLoadText.Text = T("Utilization ") + Percent(s.GpuLoadPercent);
 
         if (s.MemoryUsedGiB.HasValue && s.MemoryTotalGiB.HasValue && s.MemoryTotalGiB.Value > 0)
         {
@@ -722,15 +641,15 @@ public partial class MainWindow : Window
             var used = Math.Clamp(s.MemoryUsedGiB.Value, 0, total);
             var free = Math.Max(0, total - used);
             var pct = Math.Clamp(used / total * 100, 0, 100);
-            MemoryText.Text = $"{pct:0}%";
-                        MemoryPercentText.Text = string.Format(T("{0} used · {1} free of {2}"), FormatCapacity(used), FormatCapacity(free), FormatCapacity(total));
-            AnimateProgress(MemoryUsageBar, pct);
+            DashboardMetrics.MemoryText.Text = $"{pct:0}%";
+                        DashboardMetrics.MemoryPercentText.Text = string.Format(T("{0} used · {1} free of {2}"), FormatCapacity(used), FormatCapacity(free), FormatCapacity(total));
+            AnimateProgress(DashboardMetrics.MemoryUsageBar, pct);
         }
         else
         {
-            MemoryText.Text = "N/D";
-            MemoryPercentText.Text = T("Capacity unavailable");
-            AnimateProgress(MemoryUsageBar, 0);
+            DashboardMetrics.MemoryText.Text = "N/D";
+            DashboardMetrics.MemoryPercentText.Text = T("Capacity unavailable");
+            AnimateProgress(DashboardMetrics.MemoryUsageBar, 0);
         }
 
         _history.Enqueue(s);
@@ -859,96 +778,17 @@ public partial class MainWindow : Window
 
     private void UpdateTemperatureHistoryChart(SensorSnapshot current)
     {
-        bool showCpu = TemperatureCpuFilter.IsChecked == true;
-        bool showGpu = TemperatureGpuFilter.IsChecked == true;
-        CpuHistoryPath.Visibility = showCpu ? Visibility.Visible : Visibility.Collapsed;
-        GpuHistoryPath.Visibility = showGpu ? Visibility.Visible : Visibility.Collapsed;
-        CpuHistoryPath.Data = showCpu
-            ? BuildTemperatureGeometry(_history.Select(point => point.CpuTemperatureC), _history.Count)
-            : Geometry.Empty;
-        GpuHistoryPath.Data = showGpu
-            ? BuildTemperatureGeometry(_history.Select(point => point.GpuTemperatureC), _history.Count)
-            : Geometry.Empty;
+        TemperatureHistoryChart.Samples = _history.ToArray();
+        TemperatureHistoryChart.ShowCpu = TemperatureCpuFilter.IsChecked == true;
+        TemperatureHistoryChart.ShowGpu = TemperatureGpuFilter.IsChecked == true;
     }
 
     private void UpdateUtilizationHistoryChart(SensorSnapshot current)
     {
-        bool showCpu = UtilizationCpuFilter.IsChecked == true;
-        bool showGpu = UtilizationGpuFilter.IsChecked == true;
-        bool showRam = UtilizationRamFilter.IsChecked == true;
-        CpuUtilizationHistoryPath.Visibility = showCpu ? Visibility.Visible : Visibility.Collapsed;
-        GpuUtilizationHistoryPath.Visibility = showGpu ? Visibility.Visible : Visibility.Collapsed;
-        MemoryUtilizationHistoryPath.Visibility = showRam ? Visibility.Visible : Visibility.Collapsed;
-        CpuUtilizationHistoryPath.Data = showCpu
-            ? BuildUtilizationGeometry(_utilizationHistory.Select(point => point.CpuLoadPercent), _utilizationHistory.Count)
-            : Geometry.Empty;
-        GpuUtilizationHistoryPath.Data = showGpu
-            ? BuildUtilizationGeometry(_utilizationHistory.Select(point => point.GpuLoadPercent), _utilizationHistory.Count)
-            : Geometry.Empty;
-        MemoryUtilizationHistoryPath.Data = showRam
-            ? BuildUtilizationGeometry(_utilizationHistory.Select(point =>
-                point.MemoryUsedGiB.HasValue && point.MemoryTotalGiB is > 0
-                    ? (double?)(point.MemoryUsedGiB.Value / point.MemoryTotalGiB.Value * 100d) : null),
-                _utilizationHistory.Count)
-            : Geometry.Empty;
-        // The utilization card uses a fixed color legend in its footer, so no
-        // separate caption control is required here.
-    }
-
-    private static Geometry BuildUtilizationGeometry(IEnumerable<double?> source, int sampleCount) =>
-        BuildHistoryGeometry(source, sampleCount, static percent =>
-            128d - Math.Clamp(percent, 0d, 100d) * 1.2d);
-
-    private static Geometry BuildTemperatureGeometry(IEnumerable<double?> source, int sampleCount) =>
-        BuildHistoryGeometry(source, sampleCount, static temperature =>
-        {
-            var normalized = Math.Clamp((temperature - 30d) / 60d, 0d, 1d);
-            return 128d - normalized * 120d;
-        });
-
-    private static Geometry BuildHistoryGeometry(
-        IEnumerable<double?> source,
-        int sampleCount,
-        Func<double, double> getY)
-    {
-        if (sampleCount == 0) return Geometry.Empty;
-
-        var geometry = new StreamGeometry();
-        using (var context = geometry.Open())
-        {
-            var index = 0;
-            var pointCount = 0;
-            Point firstPoint = default;
-            foreach (var value in source)
-            {
-                if (value is double number && double.IsFinite(number))
-                {
-                    var x = sampleCount <= 1 ? 0d : index * 900d / (sampleCount - 1);
-                    var point = new Point(x, getY(number));
-                    if (pointCount == 0)
-                    {
-                        firstPoint = point;
-                        context.BeginFigure(point, isFilled: false, isClosed: false);
-                    }
-                    else
-                    {
-                        context.LineTo(point, isStroked: true, isSmoothJoin: true);
-                    }
-
-                    pointCount++;
-                }
-
-                index++;
-            }
-
-            if (pointCount == 0) return Geometry.Empty;
-            if (pointCount == 1)
-                context.LineTo(new Point(Math.Min(900d, firstPoint.X + 2d), firstPoint.Y),
-                    isStroked: true, isSmoothJoin: true);
-        }
-
-        geometry.Freeze();
-        return geometry;
+        UtilizationHistoryChart.Samples = _utilizationHistory.ToArray();
+        UtilizationHistoryChart.ShowCpu = UtilizationCpuFilter.IsChecked == true;
+        UtilizationHistoryChart.ShowGpu = UtilizationGpuFilter.IsChecked == true;
+        UtilizationHistoryChart.ShowMemory = UtilizationRamFilter.IsChecked == true;
     }
 
     private static void AnimateProgress(ProgressBar bar, double target)
